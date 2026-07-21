@@ -1,11 +1,15 @@
 package com.dhaval.jobtracker.controller;
 
+import com.dhaval.jobtracker.dto.AuthResponse;
+import com.dhaval.jobtracker.dto.LoginRequest;
 import com.dhaval.jobtracker.dto.RegisterRequest;
 import com.dhaval.jobtracker.dto.UserResponse;
 import com.dhaval.jobtracker.entity.User;
+import com.dhaval.jobtracker.service.JwtService;
 import com.dhaval.jobtracker.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -19,6 +23,10 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final UserService userService;
+    private final JwtService jwtService;
+
+    @Value("${app.jwt.expiration-ms}")
+    private long expirationMs;
 
     @PostMapping("/register")
     public ResponseEntity<UserResponse> register(@Valid @RequestBody RegisterRequest request) {
@@ -26,5 +34,12 @@ public class AuthController {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(UserResponse.from(user));
+    }
+
+    @PostMapping("/login")
+    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
+        User user = userService.authenticate(request);
+        String token = jwtService.generateToken(user.getEmail(), user.getId());
+        return ResponseEntity.ok(new AuthResponse(token, "Bearer", expirationMs));
     }
 }

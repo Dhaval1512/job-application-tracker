@@ -1,8 +1,10 @@
 package com.dhaval.jobtracker.service;
 
+import com.dhaval.jobtracker.dto.LoginRequest;
 import com.dhaval.jobtracker.dto.RegisterRequest;
 import com.dhaval.jobtracker.entity.User;
 import com.dhaval.jobtracker.exception.EmailAlreadyExistsException;
+import com.dhaval.jobtracker.exception.InvalidCredentialsException;
 import com.dhaval.jobtracker.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -30,5 +32,19 @@ public class UserService {
         user.setDisplayName(request.displayName().trim());
 
         return userRepository.save(user);
+    }
+
+    @Transactional(readOnly = true)
+    public User authenticate(LoginRequest request) {
+        String email = request.email().trim();
+
+        User user = userRepository.findByEmailIgnoreCase(email)
+                .orElseThrow(InvalidCredentialsException::new);
+
+        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+            throw new InvalidCredentialsException();
+        }
+
+        return user;
     }
 }
