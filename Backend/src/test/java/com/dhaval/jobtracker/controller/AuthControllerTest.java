@@ -1,12 +1,15 @@
 package com.dhaval.jobtracker.controller;
 
+import com.dhaval.jobtracker.entity.User;
 import com.dhaval.jobtracker.repository.UserRepository;
+import com.dhaval.jobtracker.service.JwtService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.test.context.support.WithAnonymousUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -14,7 +17,9 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.security.web.FilterChainProxy;
 
+import java.time.Instant;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
@@ -33,6 +38,12 @@ class AuthControllerTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
+    @Autowired
+    private JwtService jwtService;
 
     @MockitoBean
     private UserRepository userRepository;
@@ -110,5 +121,80 @@ class AuthControllerTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.status").value(409))
                 .andExpect(jsonPath("$.message").value("email already registered"));
+    }
+
+    @Test
+    void login_withValidCredentials_returns200WithToken() throws Exception {
+        String rawPassword = "password123";
+        String hashedPassword = passwordEncoder.encode(rawPassword);
+
+        User existingUser = new User();
+        existingUser.setId(1L);
+        existingUser.setEmail("existing@example.com");
+        existingUser.setPasswordHash(hashedPassword);
+        existingUser.setDisplayName("Existing User");
+        existingUser.setCreatedAt(Instant.now());
+        existingUser.setUpdatedAt(Instant.now());
+
+        when(userRepository.findByEmailIgnoreCase("existing@example.com"))
+                .thenReturn(Optional.of(existingUser));
+
+        Map<String, String> body = Map.of(
+                "email", "existing@example.com",
+                "password", rawPassword
+        );
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").exists())
+                .andExpect(jsonPath("$.tokenType").value("Bearer"))
+                .andExpect(jsonPath("$.expiresInMs").isNumber());
+    }
+
+    @Test
+    void login_withWrongPassword_returns401() throws Exception {
+        String correctPassword = "password123";
+        String hashedPassword = passwordEncoder.encode(correctPassword);
+
+        User existingUser = new User();
+        existingUser.setId(1L);
+        existingUser.setEmail("existing@example.com");
+        existingUser.setPasswordHash(hashedPassword);
+        existingUser.setDisplayName("Existing User");
+
+        when(userRepository.findByEmailIgnoreCase("existing@example.com"))
+                .thenReturn(Optional.of(existingUser));
+
+        Map<String, String> body = Map.of(
+                "email", "existing@example.com",
+                "password", "wrongpassword"
+        );
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.message").value("invalid email or password"));
+    }
+
+    @Test
+    void login_withNonexistentUser_returns401() throws Exception {
+        when(userRepository.findByEmailIgnoreCase("nobody@example.com"))
+                .thenReturn(Optional.empty());
+
+        Map<String, String> body = Map.of(
+                "email", "nobody@example.com",
+                "password", "anypassword"
+        );
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.message").value("invalid email or password"));
     }
 }
